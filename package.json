@@ -4,15 +4,35 @@
   "description": "Voice for pi: push-to-talk dictation (earbud tap or double-Enter) and spoken replies, all local",
   "type": "module",
   "license": "MIT",
-  "keywords": ["pi-package", "voice", "dictation", "speech-to-text", "text-to-speech", "whisper", "kokoro"],
+  "keywords": [
+    "pi-package",
+    "voice",
+    "dictation",
+    "speech-to-text",
+    "text-to-speech",
+    "whisper",
+    "kokoro"
+  ],
   "pi": {
-    "extensions": ["./extensions/voice-input.ts", "./extensions/voice-output.ts"]
+    "extensions": [
+      "./extensions/voice-input.ts",
+      "./extensions/voice-output.ts"
+    ]
   },
   "scripts": {
+    "setup": "./scripts/setup.sh",
     "test": "node --test tests/"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.5.2",
     "@earendil-works/pi-tui": "^1.5.2"
-  }
+  },
+  "files": [
+    "extensions",
+    "kokoro",
+    "cues",
+    "scripts",
+    "README.md",
+    "LICENSE"
+  ]
 }

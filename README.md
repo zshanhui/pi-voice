@@ -2,6 +2,8 @@
 
 Voice for [pi](https://pi.dev): **tap your earbud, talk, and the answer is spoken back.**
 
+**New here? [Quick start](#quick-start) is three commands.**
+
 Two pi extensions that make a coding agent usable without looking at the screen — a bluetooth headset tap starts dictation, and the reply is read aloud sentence by sentence while it is still streaming. Typed prompts get silent answers, so the two modes coexist without a switch.
 
 Everything runs on your machine: whisper.cpp (or Parakeet / mlx-whisper) for speech to text, Kokoro for text to speech. No API key, no account, no audio leaving the box.
@@ -25,36 +27,58 @@ tap earbud            "listening"  → talk → tap again
 | **Read-aloud follows the input** | A dictated prompt gets a spoken answer; a typed prompt gets a silent one. |
 | **Nothing is sent for silence** | A mute mic, a stray tap, or a whisper hallucination (`[BLANK_AUDIO]`, `you`) is dropped before it costs a call or a keystroke. |
 
-## Requirements
+## Quick start
 
-macOS (playback uses `afplay`, capture uses ffmpeg's `avfoundation`), plus:
+```bash
+git clone https://github.com/zshanhui/pi-voice ~/pi-voice
+cd ~/pi-voice
+./scripts/setup.sh          # installs what is missing, asks before big downloads
+pi install ~/pi-voice       # enable in every session (or: pi -e ~/pi-voice for one run)
+```
+
+That is the whole flow. `setup.sh` is idempotent — re-run it any time, or with no risk:
+
+```bash
+./scripts/setup.sh --dry-run        # report what is present and what is missing
+./scripts/setup.sh --yes            # no prompts (e.g. in a dotfiles bootstrap)
+./scripts/setup.sh --whisper small.en   # pick a different whisper model
+./scripts/setup.sh --api-only       # no local models, just check for an API key
+```
+
+Then tap your headset once and talk, or press `Enter` `Enter` on an empty prompt. Grant your terminal microphone access in System Settings → Privacy & Security → Microphone the first time — otherwise capture records silence.
+
+Verify inside pi with `/voice-doctor` (backend, model, mic, which tab would answer a tap) and `/speak status` (voice, rate, engine).
+
+### What setup.sh installs
+
+| piece | size | notes |
+|---|---|---|
+| `ffmpeg` | ~90 MB via brew | audio capture |
+| `whisper-cpp` + `ggml-base.en.bin` | ~10 MB + 141 MB | transcription, ~0.6 s for a 5 s clip |
+| Kokoro venv (`kokoro-onnx`) | ~50 MB of wheels | synthesis |
+| `kokoro-v1.0.int8.onnx` + `voices-v1.0.bin` | 88 MB + 27 MB | synthesis model |
+| cue sounds | 148 KB | "listening", "sending", "no audio detected" |
+
+Roughly 400 MB in total, one time. Everything lands in `~/.pi/voice-kokoro`, `~/models` and `~/.pi/voice-cues`, and `setup.sh` prints each step and asks before downloading anything large.
+
+### Doing it by hand
+
+If you would rather control every step:
 
 ```bash
 brew install ffmpeg whisper-cpp
-whisper-cpp-download-ggml-model base.en    # 141 MB, ~0.6s for a 5s clip
+whisper-cpp-download-ggml-model base.en          # or drop ggml-*.bin in ~/models
+
+uv venv --python 3.12 ~/.pi/voice-kokoro          # or: python3 -m venv
+~/.pi/voice-kokoro/bin/python -m pip install kokoro-onnx
+M=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+curl -L -o ~/.pi/voice-kokoro/kokoro-v1.0.int8.onnx "$M/kokoro-v1.0.int8.onnx"
+curl -L -o ~/.pi/voice-kokoro/voices-v1.0.bin       "$M/voices-v1.0.bin"
+cp kokoro/sidecar.py ~/.pi/voice-kokoro/
+mkdir -p ~/.pi/voice-cues && cp cues/*.wav ~/.pi/voice-cues/
 ```
 
-Or point it at an OpenAI-compatible transcription API instead — see `PI_VOICE_BACKEND`.
-
-## Install
-
-```bash
-# 1. the local TTS engine (~120 MB of models, created under ~/.pi/voice-kokoro)
-git clone https://github.com/<you>/pi-voice ~/pi-voice
-cd ~/pi-voice && ./scripts/setup-kokoro.sh
-
-# 2. the extensions
-pi install ~/pi-voice            # every session
-pi -e ~/pi-voice                 # or just this run
-```
-
-`pi install` with a git URL also works, and no clone is needed:
-
-```bash
-pi install git:github.com/<you>/pi-voice
-```
-
-Grant your terminal microphone access in System Settings → Privacy & Security → Microphone, then tap the headset once. `/voice-doctor` and `/speak status` print exactly what resolved.
+Alternatives to whisper.cpp: `pip install mlx-whisper` (Apple Silicon, downloads its model on first use, ~1.5 GB) or an OpenAI-compatible key (`PI_VOICE_API_KEY`, `OPENAI_API_KEY`, `DEEPINFRA_API_KEY`) — with a key, no local transcription model is needed at all.
 
 ## Use
 
@@ -65,6 +89,20 @@ Grant your terminal microphone access in System Settings → Privacy & Security 
 **Interrupting.** `Enter` during playback stops the voice; so does `ctrl+s`. Submitting any prompt stops it (and pressed Enter never gets swallowed by the editor).
 
 **Commands.** `/voice`, `/voice-doctor`, `/voice-backend [auto|local|whisper|api|status]`, `/speak [on|off|status|stop|last|rate N|voice NAME|zh NAME|lang|uninstall]`.
+
+## Troubleshooting
+
+| symptom | cause and fix |
+|---|---|
+| `No transcription backend available: no whisper-cli/whisper binary` | nothing to transcribe with — run `./scripts/setup.sh` |
+| `Kokoro not installed at ~/.pi/voice-kokoro — extension idle` | run `./scripts/setup.sh`; or set `PI_SPEAK_KOKORO_DIR` if you keep it elsewhere |
+| Recording works, transcript is empty, nothing is sent | correct behaviour: the clip was silent (below `PI_VOICE_MIN_DB`, default −40 dBFS). The cap is logged in the warning; lower it (`PI_VOICE_MIN_DB=-45`) if your mic is quiet |
+| `Voice: no audible audio` on every clip | microphone permission missing for your terminal, or the wrong device — check `/voice-doctor` for the resolved device, force one with `PI_VOICE_MIC=1` |
+| Headset tap does nothing | `PI_VOICE_EARBUD=0` set? Is this pi tab focused? Only the focused tab answers a tap. `PI_VOICE_TRACE=1` logs what the watcher saw |
+| Tap works but the reply is silent | the prompt was typed, not dictated — read-aloud follows the input (`PI_SPEAK_ONLY_VOICE=0` disables that) |
+| Speech starts late, or the first word is missing | capture needs ~1 s to open; the "listening" cue plays after that (`PI_VOICE_CUE_DELAY_MS=1500` if your device is slower) |
+| `parakeet-cli failed (exit 134)` | that Parakeet build aborts on some machines — `/voice-backend whisper` |
+| Playback talks over you while recording | should not happen: playback pauses on the mic lock. If it does, the recorder stopped refreshing the lock — restart pi |
 
 ## How the two halves talk to each other
 
@@ -141,7 +179,8 @@ rm -f ~/.pi/agent/voice-output.json ~/.pi/agent/voice-input.json
 ## Development
 
 ```bash
-npm install
+npm run setup   # same as ./scripts/setup.sh
+npm install     # only needed for the tests
 npm test        # 17 tests over the pure parts: audio level math, cue filtering, speech chunking
 ```
 
