@@ -470,6 +470,16 @@ export function speakable(text: string): string {
 	s = s.replace(/^\s{0,3}>\s?/gm, " "); // blockquotes
 	s = s.replace(/^\s*[-*+]\s+/gm, " "); // bullets (stream-safe to strip)
 	s = s.replace(/^\s*\d+[.)]\s+/gm, " "); // ordered list markers
+	// "#4" is read aloud as "hash four". Ordinals are common in prose ("rank #1",
+	// "#6, Elo 1437"), so say "number". The lookarounds keep hex colours
+	// (#1F2937), CSS ids (#app) and C# untouched.
+	s = s.replace(/(?<![\w#])#(\d+)(?![\w])/g, "number $1");
+	// "~10" comes out as "tilde ten" and it means approximately. Between digits it
+	// is a range separator (5~10), so say "to". A leading digit-left tilde is the
+	// approximation case, and "~/" is a home directory, not a tilde.
+	s = s.replace(/(?<=\d)~(?=\d)/g, " to ");
+	s = s.replace(/(?<![\w~])~(?=[\d$€£¥])/g, "about ");
+	s = s.replace(/~\//g, "home/");
 	s = s.replace(/\*\*([^*\n]+)\*\*/g, "$1"); // **bold**
 	s = s.replace(/\*([^*\n]+)\*/g, "$1"); // *italic*
 	// Underscore emphasis only when it is not inside an identifier, so that

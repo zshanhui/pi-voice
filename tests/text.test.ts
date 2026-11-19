@@ -71,6 +71,25 @@ test("speakable strips markdown for the ear", () => {
 	assert.equal(speakable("| a | b |"), "a b");
 });
 
+test("speakable reads #4 as number 4", () => {
+	assert.equal(speakable("Kimi ranks #6 at Elo 1437"), "Kimi ranks number 6 at Elo 1437");
+	assert.equal(speakable("see #12 and #13"), "see number 12 and number 13");
+	// Hex colours, CSS ids and C# must survive: only bare ordinals are rewritten.
+	assert.equal(speakable("the colour #1F2937"), "the colour #1F2937");
+	assert.equal(speakable("target #app and C#4"), "target #app and C#4");
+	// A markdown heading is stripped before this rule can see it.
+	assert.equal(speakable("## Heading"), "Heading");
+});
+
+test("speakable reads ~10 as about 10", () => {
+	assert.equal(speakable("~10 servers"), "about 10 servers");
+	assert.equal(speakable("~1.5x faster than #2"), "about 1.5x faster than number 2");
+	assert.equal(speakable("costs ~$5 per run"), "costs about $5 per run");
+	// A range separator is a "to", and ~/ is a home directory.
+	assert.equal(speakable("5~10 ms"), "5 to 10 ms");
+	assert.equal(speakable("~/oss/pi-voice"), "home oss pi-voice");
+});
+
 test("streaming text skips code fences and announces nothing by default", () => {
 	const state = freshState();
 	const out = [
