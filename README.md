@@ -1,3 +1,5 @@
+**English** · [简体中文](README.zh-CN.md)
+
 # pi-voice
 
 Voice for [pi](https://pi.dev): **tap your earbud, talk, and the answer is spoken back.**

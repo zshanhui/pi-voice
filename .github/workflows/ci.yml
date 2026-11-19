@@ -38,3 +38,16 @@ jobs:
           cat /tmp/setup.log
           test "$code" -eq 1 || { echo "expected exit 1 on a machine with nothing installed, got $code"; exit 1; }
           grep -q "dictation: no backend" /tmp/setup.log || { echo "dry run did not report the missing backend"; exit 1; }
+
+  docs:
+    name: readme cross-links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: both languages exist and link to each other
+        run: |
+          test -f README.md || { echo "README.md is missing"; exit 1; }
+          test -f README.zh-CN.md || { echo "README.zh-CN.md is missing"; exit 1; }
+          head -1 README.md | grep -q "README.zh-CN.md" || { echo "README.md must link the Chinese version"; exit 1; }
+          head -1 README.zh-CN.md | grep -q "README.md" || { echo "README.zh-CN.md must link the English version"; exit 1; }
+          echo "language switchers present"

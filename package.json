@@ -34,7 +34,8 @@
     "scripts",
     "README.md",
     "SECURITY.md",
-    "LICENSE"
+    "LICENSE",
+    "README.zh-CN.md"
   ],
   "repository": {
     "type": "git",
