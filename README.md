@@ -205,7 +205,7 @@ rm -f ~/.pi/agent/voice-output.json ~/.pi/agent/voice-input.json
 ```bash
 npm run setup   # same as ./scripts/setup.sh
 npm install     # only needed for the tests
-npm test        # 17 tests over the pure parts: audio level math, cue filtering, speech chunking
+npm test        # 17 tests: audio level math, cue filtering, speech chunking
 ```
 
 The pure functions (wav header parsing, dBFS levels, cue detection, markdown-to-speech chunking) are exported and tested; the pi wiring (commands, hooks, the two worker loops) is exercised by running it.

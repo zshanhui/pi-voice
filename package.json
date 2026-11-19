@@ -21,7 +21,7 @@
   },
   "scripts": {
     "setup": "./scripts/setup.sh",
-    "test": "node --test tests/"
+    "test": "node --test tests/audio.test.ts tests/text.test.ts"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.5.2",
