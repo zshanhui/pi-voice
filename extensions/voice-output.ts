@@ -76,7 +76,13 @@
  *   PI_SPEAK_STOP_KEY     default "ctrl+s"
  *   PI_SPEAK_ENTER=0      do not let Enter stop playback
  *   PI_SPEAK_ONLY_VOICE=0 speak every reply, even ones answering typed prompts
+ *   PI_SPEAK_FOCUS=0      let background sessions speak (default: focused tab only)
  *   PI_SPEAK_DEBUG=1      log to stderr
+ *
+ * Only the focused tab speaks: a reply in a background session is synthesized not at
+ * all, so two pi sessions never talk over each other and you never hear a session you
+ * cannot see. Unknown focus fails open (a denied Automation permission must not mute
+ * read-aloud), and PI_SPEAK_FOCUS=0 turns the gate off.
  *
  * Dictating while it is talking: voice-input.ts claims $TMPDIR/pi-voice-mic.lock
  * while it records, keeps it fresh for the whole clip, and playback *stops* rather
@@ -201,6 +207,23 @@ const MIC_LOCK = join(tmpdir(), "pi-voice-mic.lock");
 const MIC_LOCK_TTL_MS = 15_000;
 
 /**
+ * Should a session speak, given what the frontmost app and the tty say? Pure, so the
+ * policy is testable without a terminal.
+ *
+ * Fails *open* when the answer is unknowable — macOS denies automation without
+ * asking, and some terminals report no tty — because muting read-aloud for everyone
+ * who never granted Automation permission is worse than the occasional second voice.
+ * Fails closed only when it can prove another app is in front or another tab owns
+ * the tty.
+ */
+export function focusAllowsSpeech(view: { app: string; tty?: string; own?: string }): boolean {
+	if (!view.app) return true; // cannot tell
+	if (!TERMINAL_APPS.has(view.app)) return false; // another app is in front
+	if (!view.tty || !view.own) return true; // this terminal does not report a tty
+	return view.tty.replace(/^\/dev\//, "") === view.own.replace(/^\/dev\//, "");
+}
+
+/**
  * Read-aloud follows the input: a reply to a typed prompt stays silent, a reply to a
  * dictated one is spoken. voice-input.ts writes this marker on every submission,
  * since that is the only place that knows how the prompt arrived. No marker at all
@@ -208,6 +231,18 @@ const MIC_LOCK_TTL_MS = 15_000;
  */
 const SOURCE_FILE = join(tmpdir(), `pi-voice-${process.pid}-source`);
 const ONLY_VOICE = env("PI_SPEAK_ONLY_VOICE") !== "0";
+/** Speaks only while this session's terminal tab is the focused one. */
+const FOCUS_GATE = env("PI_SPEAK_FOCUS") !== "0";
+
+/**
+ * Apps that can host a pi session. Anything else in front means no pi tab is
+ * visible, and then nothing should start talking.
+ */
+const TERMINAL_APPS = new Set([
+	"Terminal", "iTerm2", "Warp", "Ghostty", "WezTerm", "Alacritty", "kitty",
+	"Hyper", "Tabby", "Rio", "VSCode", "Code", "Cursor",
+]);
+
 
 function promptWasTyped(): boolean {
 	if (!ONLY_VOICE) return false;
@@ -606,6 +641,8 @@ export default function (pi: ExtensionAPI) {
 	let streaming = false;
 	/** This reply answers a typed prompt, so it is not read aloud (see promptWasTyped). */
 	let muted = false;
+	/** This reply belongs to a session whose tab is not in focus, so it stays silent. */
+	let inBackground = false;
 	// The two loops retire independently: synthesis finishes at message_end while
 	// playback is still running, so "any loop alive" is the wrong question when
 	// deciding whether to start them.
@@ -1048,6 +1085,57 @@ export default function (pi: ExtensionAPI) {
 		return undefined;
 	};
 
+	// --- focus gate -----------------------------------------------------------
+	//
+	// One tab speaks at a time. A background session narrating its reply is worse
+	// than useless: you cannot see which one is talking, and the tab you are looking
+	// at is probably about to speak as well.
+
+	/** This session's tty, so a reply can be matched to the visible tab. */
+	let ownTty: string | undefined;
+
+	const readOwnTty = async (): Promise<void> => {
+		try {
+			const result = await pi.exec("ps", ["-o", "tty=", "-p", String(process.pid)], { timeout: 5_000 });
+			const value = result.stdout.trim().replace(/^\/dev\//, "");
+			ownTty = value && value !== "??" ? `/dev/${value}` : undefined;
+		} catch {
+			ownTty = undefined;
+		}
+		log("own tty", ownTty);
+	};
+
+	/** tty of the frontmost terminal tab, or undefined when it cannot be read. */
+	const frontTty = async (): Promise<{ app: string; tty?: string }> => {
+		const script = (code: string) =>
+			pi.exec("osascript", ["-e", code], { timeout: 8_000 }).then((r) => r.stdout.trim()).catch(() => "");
+		const app = await script('tell application "System Events" to get name of first process whose frontmost is true');
+		if (app === "Terminal") {
+			return { app, tty: await script('tell application "Terminal" to get tty of selected tab of front window') };
+		}
+		if (app === "iTerm2") {
+			return {
+				app,
+				tty: await script('tell application "iTerm2" to tell current window to tell current session to get tty'),
+			};
+		}
+		return { app };
+	};
+
+	/**
+	 * Should this session speak? Fails *open* when the answer is unknowable — no
+	 * terminal exposes no tty, and macOS denies automation without asking — because
+	 * silently muting read-aloud for everyone without Automation permission is worse
+	 * than the occasional second voice. It fails closed only when it can prove another
+	 * app is in front, or that a different tab holds the tty.
+	 */
+	const ownsFocus = async (): Promise<boolean> => {
+		const { app, tty } = await frontTty();
+		const allowed = focusAllowsSpeech({ app, tty, own: ownTty });
+		log("focus", { app, front: tty, own: ownTty, allowed });
+		return allowed;
+	};
+
 	// --- lifecycle -----------------------------------------------------------
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -1086,7 +1174,8 @@ export default function (pi: ExtensionAPI) {
 			/* ignore */
 		}
 		statusCtx = ctx;
-		log("ready", { enabled, voice, rate, lang: SPEAK_LANG });
+		await readOwnTty();
+		log("ready", { enabled, voice, rate, lang: SPEAK_LANG, focusGate: FOCUS_GATE });
 
 		// Pay the model load and ONNX warmup now, while the user is still typing,
 		// instead of on the first sentence of the first reply.
@@ -1119,7 +1208,9 @@ export default function (pi: ExtensionAPI) {
 		// Snapshot the input source now, not at message_end: the marker can change
 		// while a long reply streams if the user submits the next prompt early.
 		muted = promptWasTyped();
-		log("reply", { muted });
+		inBackground = FOCUS_GATE ? !(await ownsFocus()) : false;
+		log("reply", { muted, inBackground });
+		if (inBackground) log("not speaking: another tab or app is in focus");
 	});
 
 	pi.on("message_update", async (event, ctx) => {
@@ -1127,7 +1218,7 @@ export default function (pi: ExtensionAPI) {
 		if (streamEvent?.type !== "text_delta") return;
 		if (!enabled) return;
 		sawDelta = true;
-		if (muted) return; // typed prompt: keep tracking text, just stay quiet
+		if (muted || inBackground) return; // keep tracking the text, just stay quiet
 		const chunks = feedText(text, streamEvent.delta);
 		if (chunks.length > 0) {
 			log("speaking", chunks.map((c) => (c.length > 60 ? `${c.slice(0, 60)}…` : c)));
@@ -1156,7 +1247,7 @@ export default function (pi: ExtensionAPI) {
 			chunks = [...feedText(fallback, whole), ...flushText(fallback)];
 		}
 		text = freshTextState();
-		if (chunks.length > 0 && !muted) enqueue(ctx, chunks);
+		if (chunks.length > 0 && !muted && !inBackground) enqueue(ctx, chunks);
 
 		// Let the loops drain, then clear the indicator.
 		const myGen = generation;

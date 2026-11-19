@@ -95,6 +95,7 @@ pi install ~/pi-voice                  # 或：pi -e ~/pi-voice 只试一次
 | `PI_SPEAK_RATE` | `200` | 每分钟词数 |
 | `PI_SPEAK_ONLY_VOICE` | 开 | 设为 `0` 时所有回答都朗读，包括对键盘提问的回答 |
 | `PI_SPEAK` | 开 | 设为 `0` 时启动即为关闭朗读 |
+| `PI_SPEAK_FOCUS` | 开 | 设为 `0` 时后台会话也会朗读 |
 
 用 `/voice-backend`、`/speak voice` 和 `/speak rate` 做出的选择保存在 `~/.pi/agent/voice-*.json` 里。
 
@@ -116,7 +117,7 @@ npm test         # 17 个测试：音量计算、提示音过滤、语音分块
 
 ## 限制
 
-播放仅支持 macOS（使用 `afplay`）；一次只能有一段录音，因为播放和听写通过锁文件共用麦克风；免手操作只在当前聚焦的 pi 标签页生效。
+播放仅支持 macOS（使用 `afplay`）；一次只能有一段录音，因为播放和听写通过锁文件共用麦克风；只有当前聚焦的 pi 标签页会朗读或响应耳机点击——后台会话保持静默（设 `PI_SPEAK_FOCUS=0` 可以解除朗读的这条限制）。
 
 ## 卸载
 
