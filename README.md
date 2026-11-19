@@ -100,11 +100,9 @@ Choices made with `/voice-backend`, `/speak voice` and `/speak rate` persist in 
 
 Both extensions run in one pi process and coordinate through two owner-only files in the temp directory: a microphone lock (written while recording, so playback pauses instead of transcribing the speakers) and a per-session marker saying whether the prompt was dictated or typed (so a typed prompt gets a silent reply).
 
-## Security and trust
+## Security
 
-A pi extension runs as ordinary code with your privileges, so here is exactly what this one touches: the microphone through `ffmpeg` while recording; owner-only files in the temp directory; the Kokoro and cue directories read-only; two small JSON config files; a read of the system log to see headset taps; and an AppleScript query for the selected terminal tab, so only the focused pi tab answers a tap.
-
-**No network access at runtime** unless you configure the transcription API, in which case one clip is uploaded per dictation. Installing fetches from GitHub, Hugging Face, PyPI and Homebrew. There is no telemetry. To audit before installing: `grep -nE "pi\.exec|spawn\(|fetch\(" extensions/*.ts`, then `npm test`. Report vulnerabilities per [SECURITY.md](SECURITY.md), not in a public issue.
+Runs as ordinary code with your privileges, and touches the microphone only while recording. No network access at runtime unless you set a transcription API key, and no telemetry. Threat model, every resource touched, and how to audit: [SECURITY.md](SECURITY.md).
 
 ## Development
 
