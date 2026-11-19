@@ -1,0 +1,2 @@
+# Keep the committed audio out of diffs and line-ending conversion
+*.wav binary
