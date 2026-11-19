@@ -33,6 +33,15 @@
     "cues",
     "scripts",
     "README.md",
+    "SECURITY.md",
     "LICENSE"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zshanhui/pi-voice.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zshanhui/pi-voice/issues"
+  },
+  "homepage": "https://github.com/zshanhui/pi-voice#readme"
 }

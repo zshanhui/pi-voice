@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    name: tests (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  shell:
+    name: setup.sh sanity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: syntax
+        run: bash -n scripts/setup.sh
+      - name: dry run reports what is missing and exits non-zero
+        run: |
+          set +e
+          ./scripts/setup.sh --dry-run --yes > /tmp/setup.log 2>&1
+          code=$?
+          cat /tmp/setup.log
+          test "$code" -eq 1 || { echo "expected exit 1 on a machine with nothing installed, got $code"; exit 1; }
+          grep -q "dictation: no backend" /tmp/setup.log || { echo "dry run did not report the missing backend"; exit 1; }
