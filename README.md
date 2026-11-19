@@ -23,19 +23,61 @@ cd ~/pi-voice && ./scripts/setup.sh    # installs what is missing, asks before b
 pi install ~/pi-voice                  # or: pi -e ~/pi-voice for one run
 ```
 
-Then tap your headset once and talk. Grant your terminal microphone access in System Settings → Privacy & Security → Microphone, or capture records silence. `./scripts/setup.sh --dry-run` reports what is present and what is missing; `--help` lists the rest.
+Then tap your headset once and talk. Grant your terminal microphone access in System Settings → Privacy & Security → Microphone, or capture records silence.
 
-Verify inside pi with `/voice-doctor` (backend, model, mic, which tab would answer a tap) and `/speak status` (voice, rate, engine). About 400 MB of models and tools are installed once: ffmpeg, whisper.cpp plus `base.en`, and the Kokoro engine. If you would rather run every step yourself, `setup.sh --dry-run` prints the commands it would run, and each command also appears in the extension headers.
+Verify inside pi: `/voice-doctor` reports the backend, model, mic and which tab would answer a tap; `/speak status` reports voice, rate and engine.
+
+### The setup script
+
+`scripts/setup.sh` detects what is present, tells you what is missing, and only downloads after asking. It is idempotent — re-run it any time, including after moving directories.
+
+| command | what it does |
+|---|---|
+| `./scripts/setup.sh` | guided install of everything missing |
+| `./scripts/setup.sh --dry-run` | report present/missing, change nothing |
+| `./scripts/setup.sh --yes` | unattended (dotfiles bootstrap, CI) |
+| `./scripts/setup.sh --whisper small.en` | install a different whisper model |
+| `./scripts/setup.sh --api-only` | no local models, just check for an API key |
+| `./scripts/setup.sh --help` | usage |
+
+It works through five steps and reports each one:
+
+1. `ffmpeg` — capture (`brew install ffmpeg` if missing)
+2. whisper.cpp binary **and** ggml model — transcription; skipped if mlx-whisper or an API key is available
+3. Kokoro venv plus `kokoro-v1.0.int8.onnx` and `voices-v1.0.bin` — synthesis
+4. `sidecar.py` and the cue wav files copied into place
+5. a summary, and the exact `pi install` line to run next
+
+It exits **1** when something still needs attention, so a bootstrap can detect it. Override where things land with `KOKORO_DIR` / `PI_SPEAK_KOKORO_DIR`, `CUES_DIR` / `PI_VOICE_CUES`, `PI_VOICE_MODELS_DIR`, `PYTHON`, or pin the Python package with `KOKORO_PKG="kokoro-onnx==0.4.9"`. Everything is HTTPS-only and resumable.
 
 ## Use
 
-**Headset.** One tap starts recording — after a short spoken "listening", because capture opens first, so the cue means *talk now*. One tap stops it and sends the transcript straight to the model, since you cannot see an editor.
+| gesture | effect |
+|---|---|
+| tap headset | start recording, tap again to stop and send |
+| `Enter` `Enter` | start recording from the keyboard (empty editor) |
+| `Enter` while recording | accept and insert the transcript into the editor |
+| `Escape` while recording | discard the clip |
+| `Enter` or `ctrl+s` while it is talking | stop playback |
+| submit any prompt | stops playback too |
 
-**Keyboard.** On an empty editor, `Enter` `Enter` starts recording; `Enter` inserts the transcript into the editor, `Escape` discards the clip, `/voice` toggles recording.
+A headset tap speaks "listening" after capture has opened — that cue means *talk now* — and sends the transcript straight to the model, since you cannot see an editor. Keyboard dictation inserts into the editor instead, so you can edit before sending.
 
-**Interrupting.** `Enter` or `ctrl+s` stops playback, and submitting any prompt stops it too.
-
-**Commands.** `/voice`, `/voice-doctor`, `/voice-backend [auto|local|whisper|api]`, `/speak [on|off|status|stop|last|rate N|voice NAME]`.
+| command | what it does |
+|---|---|
+| `/voice` | toggle recording (the keyboard-free alternative to the chord) |
+| `/voice-doctor` | resolved backend, model, mic, and which tab would answer a tap |
+| `/voice-backend` | show the saved transcriber and what it resolves to |
+| `/voice-backend local\|whisper\|api\|auto` | choose the transcriber; persists across sessions |
+| `/speak` | toggle read-aloud |
+| `/speak on` / `/speak off` | set it explicitly |
+| `/speak status` | voice, rate, language, engine, stop key |
+| `/speak stop` | stop playback now |
+| `/speak last` | re-read the previous reply |
+| `/speak rate 240` | words per minute; persists |
+| `/speak voice af_heart` | change voice; persists |
+| `/speak zh zf_xiaobei` | voice used for Chinese replies |
+| `/speak uninstall` | print the removal commands |
 
 ## Configuration
 

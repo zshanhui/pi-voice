@@ -7,6 +7,7 @@
 #   ./scripts/setup.sh --dry-run        report what is present / missing, change nothing
 #   ./scripts/setup.sh --whisper small.en
 #   ./scripts/setup.sh --api-only       skip local models, just check for an API key
+#   ./scripts/setup.sh --help           this message
 #
 # Everything is local: no account, no telemetry, no audio leaves the machine unless
 # you pick the transcription API backend.
@@ -31,7 +32,7 @@ while [ $# -gt 0 ]; do
     --api-only) API_ONLY=1 ;;
     --whisper) shift; WHISPER_MODEL="${1:-base.en}" ;;
     -h|--help)
-      sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     *) echo "unknown option: $1 (try --help)" >&2; exit 2 ;;
   esac
