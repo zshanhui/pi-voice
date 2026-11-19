@@ -77,8 +77,10 @@ pi install ~/pi-voice                  # 或：pi -e ~/pi-voice 只试一次
 | `/speak stop` | 立刻停止播放 |
 | `/speak last` | 重读上一条回答 |
 | `/speak rate 240` | 每分钟词数；会保存 |
-| `/speak voice af_heart` | 更换音色；会保存 |
-| `/speak zh zf_xiaobei` | 用于中文回答的音色 |
+| `/speak voice` | 列出引擎里所有音色并选择 |
+| `/speak voice af_heart` | 直接指定某一个；会保存 |
+| `/speak zh` | 列出中文音色并选择 |
+| `/speak zh zf_xiaobei` | 直接指定某一个 |
 | `/speak uninstall` | 打印卸载命令 |
 
 ## 配置

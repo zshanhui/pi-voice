@@ -77,8 +77,10 @@ A headset tap speaks "listening" after capture has opened — that cue means *ta
 | `/speak stop` | stop playback now |
 | `/speak last` | re-read the previous reply |
 | `/speak rate 240` | words per minute; persists |
-| `/speak voice af_heart` | change voice; persists |
-| `/speak zh zf_xiaobei` | voice used for Chinese replies |
+| `/speak voice` | list every voice the engine has and pick one |
+| `/speak voice af_heart` | set one directly; persists |
+| `/speak zh` | list the Mandarin voices and pick one |
+| `/speak zh zf_xiaobei` | set one directly |
 | `/speak uninstall` | print the removal commands |
 
 ## Configuration

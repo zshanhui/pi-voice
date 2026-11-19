@@ -22,8 +22,10 @@
  *   /speak stop         stop speaking now
  *   /speak last         re-speak the previous reply
  *   /speak rate 240     words per minute (Kokoro derives playback speed from it)
- *   /speak voice af_heart   change the default (English) voice
- *   /speak zh zf_xiaobei     change the voice used for Chinese replies
+ *   /speak voice            list every voice the engine has, pick one
+ *   /speak voice af_heart   set it directly
+ *   /speak zh               same, for Chinese replies
+ *   /speak zh zf_xiaobei     set it directly
  *   /speak lang         show the language (fixed at startup)
  *   /speak uninstall    print removal instructions
  *
@@ -216,6 +218,17 @@ const MIC_LOCK_TTL_MS = 15_000;
  * Fails closed only when it can prove another app is in front or another tab owns
  * the tty.
  */
+/**
+ * Voice names are `<language><gender>_<name>`: af_/am_ English, bf_/bm_ British,
+ * ef_/em_ Spanish, ff_/fm_ French, hf_/hm_ Hindi, if_/im_ Italian, jf_/jm_ Japanese,
+ * pf_/pm_ Portuguese, zf_/zm_ Mandarin. Sorting groups them by language, which is
+ * what makes a 50-entry picker scannable.
+ */
+export function voiceOptions(voices: string[], chinese = false): string[] {
+	const list = chinese ? voices.filter((name) => /^z[fm]_/i.test(name)) : voices;
+	return [...list].sort((a, b) => a.localeCompare(b));
+}
+
 export function focusAllowsSpeech(view: { app: string; tty?: string; own?: string }): boolean {
 	if (!view.app) return true; // cannot tell
 	if (!TERMINAL_APPS.has(view.app)) return false; // another app is in front
@@ -683,17 +696,25 @@ export default function (pi: ExtensionAPI) {
 		warm_ms?: number;
 		err?: string;
 		fatal?: string;
+		voices?: string[];
 	}
 
 	let sidecar: ChildProcessWithoutNullStreams | undefined;
 	let sidecarBuffer = "";
 	let sidecarSeq = 0;
+	/** The `voices` reply carries no id, so one command is awaited at a time. */
+	let pendingVoices: ((voices: string[]) => void) | undefined;
 	const waiting = new Map<
 		number,
 		{ resolve: () => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
 	>();
 
 	const settleAll = (error: Error) => {
+		if (pendingVoices) {
+			const pending = pendingVoices;
+			pendingVoices = undefined;
+			pending([]);
+		}
 		for (const [, entry] of waiting) {
 			clearTimeout(entry.timer);
 			entry.reject(error);
@@ -716,7 +737,16 @@ export default function (pi: ExtensionAPI) {
 		}
 		if (message.fatal) {
 			log("kokoro fatal:", message.fatal);
+			const pending = pendingVoices;
+			pendingVoices = undefined;
+			pending?.([]);
 			statusCtx?.ui.notify(`Voice output: kokoro unavailable (${message.fatal})`, "warning");
+			return;
+		}
+		if (Array.isArray(message.voices)) {
+			const pending = pendingVoices;
+			pendingVoices = undefined;
+			pending?.(message.voices);
 			return;
 		}
 		const entry = message.id === undefined ? undefined : waiting.get(message.id);
@@ -810,6 +840,30 @@ export default function (pi: ExtensionAPI) {
 			child.stdin.write(
 				`${JSON.stringify({ id, text: textToSpeak, voice: voiceName, speed, lang, out })}\n`,
 			);
+		});
+	};
+
+	/**
+	 * Ask the engine which voices it has. Starts the sidecar if this is the first
+	 * question, which costs the one-off model load, hence the generous timeout.
+	 */
+	const requestVoices = async (timeoutMs = 25_000): Promise<string[]> => {
+		let child: ChildProcessWithoutNullStreams;
+		try {
+			child = ensureSidecar();
+			child.stdin.write(`${JSON.stringify({ cmd: "voices" })}\n`);
+		} catch (error) {
+			log("voice list unavailable", error);
+			return [];
+		}
+		return new Promise<string[]>((resolve) => {
+			const done = (voices: string[]) => {
+				clearTimeout(timer);
+				if (pendingVoices === done) pendingVoices = undefined;
+				resolve(voices);
+			};
+			const timer = setTimeout(() => done([]), timeoutMs);
+			pendingVoices = done;
 		});
 	};
 
@@ -1278,6 +1332,38 @@ export default function (pi: ExtensionAPI) {
 
 	// --- commands ------------------------------------------------------------
 
+	/**
+	 * List the engine's voices and let the user pick one. `/speak voice` with no
+	 * argument is a discoverability command: without it the only way to learn a voice
+	 * name was to read the source.
+	 */
+	const chooseVoice = async (
+		ctx: ExtensionContext,
+		title: string,
+		chinese: boolean,
+		current: string,
+	): Promise<string | undefined> => {
+		if (!ctx.hasUI) return undefined;
+		const all = await requestVoices();
+		if (all.length === 0) {
+			ctx.ui.notify(
+				`Voice output: could not read the voice list (is Kokoro installed at ${KOKORO_DIR}?)`,
+				"warning",
+			);
+			return undefined;
+		}
+		const options = voiceOptions(all, chinese);
+		if (options.length === 0) {
+			ctx.ui.notify(`Voice output: no ${chinese ? "Chinese" : "English"} voices in this model`, "warning");
+			return undefined;
+		}
+		const labelled = options.map((name) => (name === current ? `${name} (current)` : name));
+		const picked = await ctx.ui.select(`${title} — ${options.length} available, current ${current}`, labelled);
+		if (!picked) return undefined;
+		const name = picked.replace(/ \(current\)$/, "").trim();
+		return name || undefined;
+	};
+
 	const describe = () =>
 		`${enabled ? "on" : "off"} · voice=${voice}${AUTO_LANG ? ` (zh: ${ZH_VOICE})` : ""} · rate=${rate}wpm (en ×${SPEED_EN}, zh ×${SPEED_ZH}) · lang=${SPEAK_LANG} · stop=${STOP_KEY}${ENTER_STOP ? "+enter" : ""}`;
 
@@ -1329,7 +1415,12 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (arg === "voice") {
 				if (!value) {
-					if (ctx.hasUI) ctx.ui.notify("Voice output: usage /speak voice <name>", "warning");
+					const picked = await chooseVoice(ctx, "English voice", false, voice);
+					if (picked) {
+						voice = picked;
+						saveConfig({ voice });
+						if (ctx.hasUI) ctx.ui.notify(`Voice output: ${describe()} · saved`, "info");
+					}
 					return;
 				}
 				voice = value;
@@ -1339,7 +1430,12 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (arg === "zh") {
 				if (!value) {
-					if (ctx.hasUI) ctx.ui.notify(`Voice output: Chinese voice is ${ZH_VOICE}`, "info");
+					const picked = await chooseVoice(ctx, "Chinese voice", true, ZH_VOICE);
+					if (picked) {
+						ZH_VOICE = picked;
+						saveConfig({ zhVoice: picked });
+						if (ctx.hasUI) ctx.ui.notify(`Voice output: ${describe()} · saved`, "info");
+					}
 					return;
 				}
 				ZH_VOICE = value;
