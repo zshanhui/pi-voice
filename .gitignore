@@ -1,0 +1,13 @@
+node_modules/
+*.log
+
+# Models, venvs, and generated audio are fetched by scripts/setup-kokoro.sh
+# (they are 100+ MB and must not be committed).
+kokoro/kokoro-v1.0.int8.onnx
+kokoro/voices-v1.0.bin
+.venv/
+
+# Local scratch
+*.wav
+!cues/*.wav
+.DS_Store
