@@ -112,6 +112,7 @@ import {
 	renameSync,
 	rmSync,
 	statSync,
+	utimesSync,
 	writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -182,7 +183,9 @@ const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 /**
  * Cross-extension audio lock. voice-output.ts polls this file and stays silent
  * while we hold the microphone, so dictation never transcribes the speakers.
- * It is only a runtime flag, safe to delete.
+ * The mtime is refreshed every two seconds for as long as the recording lasts —
+ * a single write would go stale mid-clip and playback would resume while the user
+ * is still talking. It is only a runtime flag, safe to delete.
  */
 const MIC_LOCK = join(tmpdir(), "pi-voice-mic.lock");
 /**
@@ -292,15 +295,39 @@ export function earbudCommandFrom(line: string): string | undefined {
 	return match?.[1];
 }
 
+/**
+ * The recorder refreshes the lock's mtime every couple of seconds while it holds the
+ * microphone, so this interval is a freshness check, not a clip-length limit. Without
+ * the heartbeat playback resumed mid-dictation once a clip passed the TTL.
+ */
+const MIC_HEARTBEAT_MS = 2_000;
+
+let micHeartbeat: ReturnType<typeof setInterval> | undefined;
+
 function claimMic(): void {
 	try {
 		writeFileSync(MIC_LOCK, String(process.pid), { mode: 0o600 });
 	} catch {
-		/* best effort */
+		return; // best effort: no lock, so no heartbeat to run
 	}
+	if (micHeartbeat) clearInterval(micHeartbeat);
+	// Keep the lock young for as long as the recording lasts, however long that is.
+	micHeartbeat = setInterval(() => {
+		try {
+			const now = new Date();
+			utimesSync(MIC_LOCK, now, now);
+		} catch {
+			/* released already */
+		}
+	}, MIC_HEARTBEAT_MS);
+	micHeartbeat.unref?.();
 }
 
 function releaseMic(): void {
+	if (micHeartbeat) {
+		clearInterval(micHeartbeat);
+		micHeartbeat = undefined;
+	}
 	try {
 		rmSync(MIC_LOCK, { force: true });
 	} catch {

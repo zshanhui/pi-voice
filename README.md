@@ -98,7 +98,7 @@ Choices made with `/voice-backend`, `/speak voice` and `/speak rate` persist in 
 
 ## How the two halves talk to each other
 
-Both extensions run in one pi process and coordinate through two owner-only files in the temp directory: a microphone lock (written while recording, so playback pauses instead of transcribing the speakers) and a per-session marker saying whether the prompt was dictated or typed (so a typed prompt gets a silent reply).
+Both extensions run in one pi process and coordinate through two owner-only files in the temp directory: a microphone lock (written when recording starts and refreshed every two seconds while it lasts, so playback stays paused for a clip of any length instead of transcribing the speakers) and a per-session marker saying whether the prompt was dictated or typed (so a typed prompt gets a silent reply).
 
 ## Security
 

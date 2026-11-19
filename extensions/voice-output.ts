@@ -192,6 +192,11 @@ const SPEED_ZH = speedFactor("PI_SPEAK_SPEED_ZH", 1.0);
  * We poll it so the microphone never picks up our own playback.
  */
 const MIC_LOCK = join(tmpdir(), "pi-voice-mic.lock");
+/**
+ * How long an untouched lock counts as stale. The recorder refreshes it every two
+ * seconds while it holds the microphone, so this only decides how fast a crashed
+ * recorder stops blocking playback — it must never cut a live dictation short.
+ */
 const MIC_LOCK_TTL_MS = 15_000;
 
 /**
@@ -212,12 +217,34 @@ function promptWasTyped(): boolean {
 	}
 }
 
+/**
+ * Is somebody recording right now? Three signals, strongest first: our own recorder
+ * (same process, so freshness is all there is), a lock naming another live pi, and
+ * the mtime for a lock whose owner cannot be identified.
+ */
 function micActive(): boolean {
+	let holder: number | undefined;
 	try {
-		return Date.now() - statSync(MIC_LOCK).mtimeMs < MIC_LOCK_TTL_MS;
+		holder = Number(readFileSync(MIC_LOCK, "utf8").trim()) || undefined;
 	} catch {
-		return false;
+		return false; // no lock at all
 	}
+	let fresh = false;
+	try {
+		fresh = Date.now() - statSync(MIC_LOCK).mtimeMs < MIC_LOCK_TTL_MS;
+	} catch {
+		/* deleted between the two calls */
+	}
+	if (holder === process.pid) return fresh;
+	if (holder) {
+		try {
+			process.kill(holder, 0);
+			return true; // another live session is recording
+		} catch {
+			return fresh;
+		}
+	}
+	return fresh;
 }
 
 /** Enough CJK to mean the sentence is Chinese, not English with a quoted term. */
