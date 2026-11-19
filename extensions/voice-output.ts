@@ -1139,6 +1139,32 @@ export default function (pi: ExtensionAPI) {
 		return undefined;
 	};
 
+	// --- saved settings ------------------------------------------------------
+
+	/**
+	 * The saved config is read once at startup, which meant an edited
+	 * ~/.pi/agent/voice-output.json only took effect after a /reload. Re-read it when
+	 * its mtime changes, so editing the file (or another pi session running
+	 * `/speak voice …`) applies to the next reply. Environment variables still win.
+	 */
+	let savedStamp: number | undefined;
+
+	const refreshSavedConfig = (): void => {
+		let stamp: number;
+		try {
+			stamp = statSync(configPath()).mtimeMs;
+		} catch {
+			return; // no file: leave the loaded values alone
+		}
+		if (stamp === savedStamp) return;
+		savedStamp = stamp;
+		const saved = readConfig();
+		if (!env("PI_SPEAK_VOICE") && saved.voice) voice = saved.voice;
+		if (!env("PI_SPEAK_VOICE_ZH") && saved.zhVoice) ZH_VOICE = saved.zhVoice;
+		if (ENV_RATE === undefined && typeof saved.rate === "number") rate = saved.rate;
+		log("saved settings reloaded", { voice, zhVoice: ZH_VOICE, rate });
+	};
+
 	// --- focus gate -----------------------------------------------------------
 	//
 	// One tab speaks at a time. A background session narrating its reply is worse
@@ -1261,6 +1287,7 @@ export default function (pi: ExtensionAPI) {
 		statusCtx = ctx;
 		// Snapshot the input source now, not at message_end: the marker can change
 		// while a long reply streams if the user submits the next prompt early.
+		refreshSavedConfig();
 		muted = promptWasTyped();
 		inBackground = FOCUS_GATE ? !(await ownsFocus()) : false;
 		log("reply", { muted, inBackground });

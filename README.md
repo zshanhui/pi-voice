@@ -99,7 +99,7 @@ Everything is environment variables; every one is documented in the header of th
 | `PI_SPEAK` | on | `0` starts with read-aloud disabled |
 | `PI_SPEAK_FOCUS` | on | `0` lets background sessions speak too |
 
-Choices made with `/voice-backend`, `/speak voice` and `/speak rate` persist in `~/.pi/agent/voice-*.json`.
+Choices made with `/voice-backend`, `/speak voice` and `/speak rate` persist in `~/.pi/agent/voice-*.json` — edit those files and the next reply uses the new value, no reload.
 
 ## How the two halves talk to each other
 

@@ -99,7 +99,7 @@ pi install ~/pi-voice                  # 或：pi -e ~/pi-voice 只试一次
 | `PI_SPEAK` | 开 | 设为 `0` 时启动即为关闭朗读 |
 | `PI_SPEAK_FOCUS` | 开 | 设为 `0` 时后台会话也会朗读 |
 
-用 `/voice-backend`、`/speak voice` 和 `/speak rate` 做出的选择保存在 `~/.pi/agent/voice-*.json` 里。
+用 `/voice-backend`、`/speak voice` 和 `/speak rate` 做出的选择保存在 `~/.pi/agent/voice-*.json` 里——直接编辑这些文件，下一次回答就会用新值，不需要 reload。
 
 ## 两个扩展如何配合
 
