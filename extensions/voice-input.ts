@@ -102,7 +102,18 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	readdirSync,
+	renameSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -184,7 +195,7 @@ const SOURCE_FILE = join(tmpdir(), `pi-voice-${process.pid}-source`);
 
 function markSource(fromVoice: boolean): void {
 	try {
-		writeFileSync(SOURCE_FILE, fromVoice ? "voice" : "text");
+		writeFileSync(SOURCE_FILE, fromVoice ? "voice" : "text", { mode: 0o600 });
 	} catch {
 		/* output falls back to speaking, which is the loud failure, not the silent one */
 	}
@@ -283,7 +294,7 @@ export function earbudCommandFrom(line: string): string | undefined {
 
 function claimMic(): void {
 	try {
-		writeFileSync(MIC_LOCK, String(process.pid));
+		writeFileSync(MIC_LOCK, String(process.pid), { mode: 0o600 });
 	} catch {
 		/* best effort */
 	}
@@ -455,9 +466,16 @@ function findModel(files: string[]): string | undefined {
 // Shell helpers
 // ---------------------------------------------------------------------------
 
+/** Single-quote a word for /bin/sh, so an embedded quote cannot break out. */
+const shQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
+
 /** Resolve binaries through the user's PATH. Unknown binaries are absent from the map. */
 async function which(pi: ExtensionAPI, names: string[]): Promise<Map<string, string>> {
-	const script = names.map((name) => `p=$(command -v '${name}' 2>/dev/null) && printf '%s\\t%s\\n' '${name}' "$p"`).join("; ");
+	// The names are constants today, but this runs through shell -c: quote them
+	// defensively so a future caller cannot inject a command via a binary name.
+	const script = names
+		.map((name) => `p=$(command -v ${shQuote(name)} 2>/dev/null) && printf '%s\\t%s\\n' ${shQuote(name)} "$p"`)
+		.join("; ");
 	const result = await pi.exec("/bin/sh", ["-c", script], { timeout: 10_000 });
 	const found = new Map<string, string>();
 	for (const line of result.stdout.split("\n")) {
@@ -689,6 +707,11 @@ async function transcribe(pi: ExtensionAPI, backend: Backend, wavFile: string, s
 
 	if (backend.kind === "mlx") {
 		const outDir = join(tmpdir(), `pi-voice-mlx-${process.pid}-${Date.now()}`);
+		try {
+			mkdirSync(outDir, { recursive: true, mode: 0o700 });
+		} catch {
+			/* mlx_whisper creates it when we cannot */
+		}
 		const result = await pi.exec(
 			"mlx_whisper",
 			[wavFile, "--model", backend.model, "--language", LANG, "--output-format", "txt", "--output-dir", outDir],
@@ -917,6 +940,15 @@ export default function (pi: ExtensionAPI) {
 			const device = await detectInputDevice(pi);
 
 			const file = join(tmpdir(), `pi-voice-${process.pid}-${Date.now()}.wav`);
+			// Claim the path before ffmpeg does it for us: "wx" fails rather than
+			// following a symlink, so a predictable name in a shared temp directory
+			// cannot be used to make ffmpeg (-y) overwrite somebody else's file, and
+			// the recording is owner-only from the first byte.
+			try {
+				closeSync(openSync(file, "wx", 0o600));
+			} catch {
+				/* already ours, or ffmpeg will create it */
+			}
 			const controller = new AbortController();
 			const startedAt = Date.now();
 			const timer = setInterval(() => {
@@ -1081,6 +1113,11 @@ export default function (pi: ExtensionAPI) {
 		const cut = Math.min(lead, duration * 0.66);
 		if (!(cut > 0.2)) return;
 		const trimmed = `${current.file}.lead.wav`;
+		try {
+			closeSync(openSync(trimmed, "wx", 0o600));
+		} catch {
+			/* reusing a leftover path is fine, it is ours */
+		}
 		try {
 			await pi.exec(
 				FFMPEG,

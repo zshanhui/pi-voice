@@ -164,9 +164,33 @@ All of it is environment variables; both extensions also persist a few choices i
 | `PI_SPEAK_MIN_CHARS` / `PI_SPEAK_MAX_CHARS` | `40` / `320` | chunk size |
 | `PI_SPEAK_DEBUG` | off | `1` logs to stderr |
 
-## Privacy
+## Security and trust
 
-The default path is entirely local: audio goes to whisper.cpp on your machine, text goes to your model provider, and speech is synthesized by Kokoro locally. Selecting the `api` backend (`PI_VOICE_BACKEND=api`, or setting `PI_VOICE_API_KEY`) uploads the clip to that endpoint instead. Recordings are temp files deleted as soon as they are transcribed; a sweep at startup cleans up after a crashed session.
+A pi extension runs as ordinary code with your privileges — the same model as a shell alias or a git hook. This is what `pi-voice` actually does, so you can check it:
+
+| resource | access | why |
+|---|---|---|
+| microphone | `ffmpeg -f avfoundation` while recording only | capture |
+| `$TMPDIR` | create/delete recordings and synthesized wavs | clips, owner-only (`0600`, created with `O_EXCL`) |
+| `~/.pi/voice-kokoro`, `~/.pi/voice-cues` | read models, read cue wavs | engine and cues |
+| `~/.pi/agent/voice-{input,output}.json` | read/write | voices, rate, backend choice |
+| `/usr/bin/log stream` | read a system log | see headset taps (no microphone) |
+| `osascript` | query Terminal/iTerm for the selected tab | only the focused pi tab answers a tap |
+| child processes | `ffmpeg`, `whisper-cli`/`parakeet-cli`/`mlx_whisper`, `afplay`, python sidecar | transcribe, speak |
+
+Network: **nothing** is contacted at runtime unless you configure the transcription API (`PI_VOICE_API_KEY`, `OPENAI_API_KEY` or `DEEPINFRA_API_KEY`), in which case that one clip is uploaded to that endpoint. Installing (`scripts/setup.sh`) fetches from `github.com`, `huggingface.co`, `pypi.org` and `brew`. There is no telemetry.
+
+Prompt rewriting is part of the design: the `input` hook prepends `PI_VOICE_TAG` to dictated prompts, drops blank dictation, and (with `voice-output` installed) marks whether a prompt was spoken. It lives in one place per extension — `grep -n 'pi.on("input"' extensions/*.ts` — and `PI_VOICE_TAG=""` turns the tagging off.
+
+To audit before installing:
+
+```bash
+grep -nE "pi\.exec|spawn\(|fetch\(" extensions/*.ts     # every process and network call
+grep -nE "writeFileSync|rmSync|renameSync" extensions/*.ts  # every write
+npm test                                                   # pure logic, no side effects
+```
+
+Report a vulnerability per [SECURITY.md](SECURITY.md); please do not open a public issue for anything exploitable.
 
 ## Uninstall
 

@@ -38,7 +38,7 @@
  *   uv venv --python 3.12 ~/.pi/voice-kokoro
  *   uv pip install --python ~/.pi/voice-kokoro/bin/python kokoro-onnx
  *   cd ~/.pi/voice-kokoro
- *   M=https://ghfast.top/https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
+ *   M=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0
  *   curl -L -C - -o kokoro-v1.0.int8.onnx "$M/kokoro-v1.0.int8.onnx"   # 92361271 bytes
  *   curl -L -C - -o voices-v1.0.bin       "$M/voices-v1.0.bin"         # 28214398 bytes
  *   and copy sidecar.py next to them (the extension spawns it, JSON lines on stdin)
@@ -85,7 +85,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { CustomEditor, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -803,6 +803,13 @@ export default function (pi: ExtensionAPI) {
 	/** Synthesize one chunk to a temp wav. */
 	const synthesize = async (chunk: string, signal: AbortSignal): Promise<string> => {
 		const wavFile = join(tmpdir(), `${TMP_PREFIX}${process.pid}-${tmpSeq++}.wav`);
+		// Owner-only and exclusive: the name is predictable, so claim it before the
+		// sidecar opens it, instead of letting a planted symlink be written through.
+		try {
+			closeSync(openSync(wavFile, "wx", 0o600));
+		} catch {
+			/* exists: the sidecar truncates it */
+		}
 		const choice = voiceFor(chunk);
 		log("synth", { voice: choice.voice, lang: choice.lang, speed: choice.speed, text: chunk.slice(0, 40) });
 		await kokoroSynth(chunk, wavFile, choice.voice, choice.lang, choice.speed, signal);

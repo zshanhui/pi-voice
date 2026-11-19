@@ -17,6 +17,8 @@ KOKORO_DIR="${PI_SPEAK_KOKORO_DIR:-${KOKORO_DIR:-$HOME/.pi/voice-kokoro}}"
 CUES_DIR="${PI_VOICE_CUES:-${CUES_DIR:-$HOME/.pi/voice-cues}}"
 MODELS_DIR="${PI_VOICE_MODELS_DIR:-$HOME/models}"
 PYTHON="${PYTHON:-python3}"
+# Pin for reproducible installs: KOKORO_PKG="kokoro-onnx==0.4.9" ./scripts/setup.sh
+KOKORO_PKG="${KOKORO_PKG:-kokoro-onnx}"
 WHISPER_MODEL="base.en"
 ASSUME_YES=0
 DRY_RUN=0
@@ -116,7 +118,7 @@ else
       if confirm "    download ggml-$WHISPER_MODEL.bin to $MODELS_DIR (~141 MB)?"; then
         run mkdir -p "$MODELS_DIR"
         if [ "$DRY_RUN" = 0 ]; then
-          curl -L --fail --progress-bar -C - \
+          curl --proto "=https" --tlsv1.2 --retry 3 -L --fail --progress-bar -C - \
             -o "$MODELS_DIR/ggml-$WHISPER_MODEL.bin" \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$WHISPER_MODEL.bin" \
             && { ok "download finished"; TRANSCRIBE_READY=1; } || { miss "download failed"; NEED_HELP=1; }
@@ -133,7 +135,7 @@ else
           whisper-cpp-download-ggml-model "$WHISPER_MODEL" && TRANSCRIBE_READY=1
         else
           run mkdir -p "$MODELS_DIR"
-          curl -L --fail --progress-bar -C - \
+          curl --proto "=https" --tlsv1.2 --retry 3 -L --fail --progress-bar -C - \
             -o "$MODELS_DIR/ggml-$WHISPER_MODEL.bin" \
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$WHISPER_MODEL.bin" \
             && TRANSCRIBE_READY=1
@@ -163,11 +165,11 @@ else
   MISSING=$((MISSING + 1))
   if confirm "    create it and install kokoro-onnx (~50 MB of wheels)?"; then
     if [ "$DRY_RUN" = 1 ]; then
-      run "$PYTHON" -m venv "$KOKORO_DIR" "&&" pip install kokoro-onnx
+      run "$PYTHON" -m venv "$KOKORO_DIR" "&&" pip install "$KOKORO_PKG"
     else
       run "$PYTHON" -m venv "$KOKORO_DIR"
       run "$KOKORO_DIR/bin/python" -m pip install --quiet --upgrade pip
-      if run "$KOKORO_DIR/bin/python" -m pip install --quiet kokoro-onnx; then
+      if run "$KOKORO_DIR/bin/python" -m pip install --quiet "$KOKORO_PKG"; then
         VENV_OK=1
       else
         miss "pip install failed"
@@ -189,7 +191,7 @@ fetch_model() { # file expected-bytes
   if confirm "    download $file ($(human "$want")?"; then
     run mkdir -p "$KOKORO_DIR"
     if [ "$DRY_RUN" = 0 ]; then
-      curl -L --fail --progress-bar -C - -o "$path" \
+      curl --proto "=https" --tlsv1.2 --retry 3 -L --fail --progress-bar -C - -o "$path" \
         "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/$file" \
         && ok "$file downloaded" || { miss "$file download failed"; NEED_HELP=1; }
     fi

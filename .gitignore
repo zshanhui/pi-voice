@@ -11,3 +11,12 @@ kokoro/voices-v1.0.bin
 *.wav
 !cues/*.wav
 .DS_Store
+
+# Never commit these, whatever a future script does
+.env
+.env.*
+*.pem
+*.key
+*.p12
+auth.json
+
