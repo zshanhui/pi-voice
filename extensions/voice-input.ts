@@ -181,8 +181,8 @@ const VOICE_TAG = (() => {
 const squash = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
- * Cross-extension audio lock. voice-output.ts polls this file and stays silent
- * while we hold the microphone, so dictation never transcribes the speakers.
+ * Cross-extension audio lock. voice-output.ts polls this file, stops talking the
+ * moment it appears, and stays quiet, so dictation never transcribes the speakers.
  * The mtime is refreshed every two seconds for as long as the recording lasts —
  * a single write would go stale mid-clip and playback would resume while the user
  * is still talking. It is only a runtime flag, safe to delete.

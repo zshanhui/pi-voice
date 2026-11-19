@@ -78,10 +78,11 @@
  *   PI_SPEAK_ONLY_VOICE=0 speak every reply, even ones answering typed prompts
  *   PI_SPEAK_DEBUG=1      log to stderr
  *
- * Known limitation of v1: dictating with voice-input.ts while playback is
- * running feeds the speakers back into the microphone. Both extensions now
- * coordinate through $TMPDIR/pi-voice-mic.lock: voice-input claims it while
- * recording, playback pauses (and replays the interrupted sentence after).
+ * Dictating while it is talking: voice-input.ts claims $TMPDIR/pi-voice-mic.lock
+ * while it records, keeps it fresh for the whole clip, and playback *stops* rather
+ * than pausing — talking over the user, or resuming into the microphone afterwards,
+ * is never what was meant. That reply stays silent from the moment dictation starts
+ * (`/speak last` re-reads it on demand); the next one speaks normally.
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -589,8 +590,6 @@ function ownerGone(name: string): boolean {
 
 interface Playback {
 	controller: AbortController;
-	/** True when the microphone interrupted this chunk, not the user. */
-	mic: boolean;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -896,47 +895,47 @@ export default function (pi: ExtensionAPI) {
 			}
 			idleStreak = 0;
 
-			// The microphone owns the audio device while voice-input records.
+			// A recording that started between iterations ends playback outright;
+			// startMicWatch normally gets there first (see cancelForMic).
 			if (micActive()) {
-				setStatus("🔇 paused — recording");
-				while (micActive() && !signal.aborted && myGen === generation) await sleep(150);
-				if (signal.aborted || myGen !== generation) {
-					rmSync(wav, { force: true });
-					return;
-				}
-				setStatus("🔊 speaking");
+				rmSync(wav, { force: true });
+				cancelForMic();
+				return;
 			}
 
-			const playing: Playback = { controller: new AbortController(), mic: false };
+			const playing: Playback = { controller: new AbortController() };
 			const onAbort = () => playing.controller.abort();
 			signal.addEventListener("abort", onAbort, { once: true });
 			playback = playing;
-			let replay = false;
 			try {
 				await pi.exec("afplay", [wav], { timeout: 300_000, signal: playing.controller.signal });
 			} catch (error) {
-				if (playing.mic) {
-					replay = true; // interrupted by the mic: say this sentence again later
-				} else if (!signal.aborted) {
-					log("playback failed", error);
-				}
+				if (!signal.aborted) log("playback failed", error);
 			} finally {
 				signal.removeEventListener("abort", onAbort);
 				if (playback === playing) playback = undefined;
-				if (replay) wavQueue.unshift(wav);
-				else rmSync(wav, { force: true });
+				rmSync(wav, { force: true });
 			}
 		}
+	};
+
+	/**
+	 * The microphone wins. Dictating is an explicit request to talk, so playback does
+	 * not pause and resume around the clip — it ends here, and stays ended for the rest
+	 * of this reply: `muted` suppresses the deltas that are still arriving, and the next
+	 * reply is free to speak again.
+	 */
+	const cancelForMic = (ctx?: ExtensionContext) => {
+		if (!loopsRunning()) return;
+		log("microphone took over: cancelling playback");
+		muted = true;
+		stop(ctx ?? statusCtx);
 	};
 
 	const startMicWatch = () => {
 		if (micWatch) return;
 		micWatch = setInterval(() => {
-			if (!micActive()) return;
-			const current = playback;
-			if (!current) return;
-			current.mic = true;
-			current.controller.abort();
+			if (micActive()) cancelForMic();
 		}, 150);
 	};
 
