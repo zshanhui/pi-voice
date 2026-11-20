@@ -21,6 +21,7 @@ Audio is written as 16-bit mono PCM WAV at the model's native 24 kHz.
 
 import json
 import os
+import re
 import sys
 import time
 import wave
@@ -36,16 +37,65 @@ BASE_WPM = 200.0
 # explicit tone contours (wo↓ pa↓ …). espeak's Mandarin drops the tones, which
 # is why pronunciation sounds wrong even though the words are "right".
 LANG_ZH = {"cmn", "zh", "zh-cn", "yue"}
+_zh_mod = None
 _zh_g2p = None
+_en_g2p = None
+
+# Chinese runs and everything else, alternating. Mirrors misaki.zh's own split.
+_HAN_RUN = re.compile(r"[\u4E00-\u9FFF]+|[^\u4E00-\u9FFF]+")
+_ANY_LATIN = re.compile(r"[A-Za-z0-9]")
 
 
-def zh_phonemes(text):
-    global _zh_g2p
+def _zh_engine():
+    """Load misaki's Chinese G2P once, and hand back the module with it."""
+    global _zh_mod, _zh_g2p
     if _zh_g2p is None:
         from misaki import zh as misaki_zh
 
+        _zh_mod = misaki_zh
         _zh_g2p = misaki_zh.ZHG2P()
-    return _zh_g2p(text)[0]
+    return _zh_g2p
+
+
+def _han_phonemes(run):
+    return _zh_engine()(run)[0]
+
+
+def _en_phonemes(run):
+    """espeak IPA for a Latin run.
+
+    misaki's legacy Chinese path appends Latin runs verbatim, and they then reach
+    the model as if they were IPA — its 114-symbol vocabulary silently drops the
+    letters it does not know, so "DeepSeek Flash" came out as "eepSeek lash".
+    Phonemizing here keeps every sound and lets the Chinese voice say English
+    with an accent, which is the whole point of routing mixed text to it.
+    """
+    global _en_g2p
+    if _en_g2p is None:
+        from misaki.espeak import EspeakFallback
+
+        _en_g2p = EspeakFallback(british=False)
+    out = _en_g2p.backend.phonemize([run])
+    return out[0] if out else ""
+
+
+def zh_phonemes(text):
+    """Mixed Chinese/English text -> one phoneme string for a Chinese voice."""
+    g2p = _zh_engine()
+    # cn2an first, as misaki's own __call__ does, so "10" stays a Chinese numeral.
+    text = g2p.map_punctuation(_zh_mod.cn2an.transform(text, "an2cn"))
+    parts = []
+    for run in _HAN_RUN.findall(text):
+        if re.match(r"[\u4E00-\u9FFF]", run):
+            parts.append(_han_phonemes(run))
+        elif _ANY_LATIN.search(run):
+            parts.append(_en_phonemes(run.strip()))
+        else:
+            # Punctuation only: keep it, so the pause between runs survives.
+            parts.append(run.strip())
+    # ^ is espeak's tie marker and U+032F its non-syllabic mark; neither is in
+    # Kokoro's vocabulary, so drop them rather than have them vanish mid-token.
+    return " ".join(parts).replace("^", "").replace("\u032f", "")
 
 
 def reply(payload):

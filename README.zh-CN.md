@@ -94,6 +94,7 @@ pi install ~/pi-voice                  # 或：pi -e ~/pi-voice 只试一次
 | `PI_VOICE_EARBUD` | 开 | 设为 `0` 关闭耳机监听 |
 | `PI_VOICE_BACKEND` | `auto` | `whisper-cli`、`parakeet`、`mlx` 或 `api`（需要 `PI_VOICE_API_KEY`） |
 | `PI_SPEAK_VOICE` | `am_michael` | 朗读音色，例如 `af_heart`、`bm_george` |
+| `PI_SPEAK_VOICE_ZH` | `zf_xiaoxiao` | 只要一个片段里出现中文就用这个音色——英文音色完全读不出中文，而中文音色读英文只是带口音 |
 | `PI_SPEAK_RATE` | `200` | 每分钟词数 |
 | `PI_SPEAK_ONLY_VOICE` | 开 | 设为 `0` 时所有回答都朗读，包括对键盘提问的回答 |
 | `PI_SPEAK` | 开 | 设为 `0` 时启动即为关闭朗读 |

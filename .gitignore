@@ -20,3 +20,6 @@ kokoro/voices-v1.0.bin
 *.p12
 auth.json
 
+
+# Python bytecode from running the sidecar in place
+__pycache__/

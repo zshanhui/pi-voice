@@ -5,6 +5,7 @@ import {
 	feedText,
 	flushText,
 	hardWrap,
+	hasHan,
 	isStreamablePartial,
 	speakable,
 	speechWeight,
@@ -88,6 +89,19 @@ test("speakable reads ~10 as about 10", () => {
 	// A range separator is a "to", and ~/ is a home directory.
 	assert.equal(speakable("5~10 ms"), "5 to 10 ms");
 	assert.equal(speakable("~/oss/pi-voice"), "home oss pi-voice");
+});
+
+test("voice choice follows any Han character, not a ratio", () => {
+	// One Han character is enough: the Chinese voice reads English with an accent,
+	// the English voice drops Han characters entirely.
+	assert.equal(hasHan("我们用 Kimi 做前端"), true);
+	assert.equal(hasHan("Kimi vs 我们"), true);
+	assert.equal(hasHan("延迟 latency"), true);
+	assert.equal(hasHan("这是一句完整的中文，带 punctuations 和 10 个数字"), true);
+	assert.equal(hasHan("Kimi K3.1 Pro ranks #6 at 1437"), false);
+	assert.equal(hasHan("#4 ~10 home oss pi-voice"), false);
+	assert.equal(hasHan("にほんごのテキスト"), false, "kana alone is not Han");
+	assert.equal(hasHan("日本語"), true, "kanji is Han");
 });
 
 test("streaming text skips code fences and announces nothing by default", () => {

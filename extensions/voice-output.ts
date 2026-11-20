@@ -70,8 +70,9 @@
  *                         1.25 = +17% pace, 1.33 = +27%, 1.34 = +39%. Tune by ear.
  *   PI_SPEAK_SPEED_ZH     Chinese tempo multiplier, default 1.0 (Mandarin stretches at speed)
  *   PI_SPEAK_LANG         default en-us; zh maps to espeak's cmn
- *   PI_SPEAK_VOICE_ZH     voice for Chinese replies, default zf_xiaoxiao
- *   PI_SPEAK_AUTO_LANG=0  disable per-reply language detection
+ *   PI_SPEAK_VOICE_ZH     voice for any chunk containing Chinese, default zf_xiaoxiao
+ *   PI_SPEAK_AUTO_LANG=0  disable per-chunk language detection, so everything uses
+ *                         the English voice (Chinese is then dropped, not read)
  *   PI_SPEAK_CODE=announce  say "Code block, N lines." instead of silence
  *   PI_SPEAK_MIN_CHARS    minimum chunk length, default 40
  *   PI_SPEAK_MAX_CHARS    maximum chunk length, default 320
@@ -296,12 +297,16 @@ function micActive(): boolean {
 	return fresh;
 }
 
-/** Enough CJK to mean the sentence is Chinese, not English with a quoted term. */
-function isChinese(text: string): boolean {
-	const cjk = text.match(/[\u3400-\u4dbf\u4e00-\u9fff]/g)?.length ?? 0;
-	if (cjk < 4) return false;
-	const latin = text.match(/[A-Za-z]/g)?.length ?? 0;
-	return cjk > latin / 2;
+/**
+ * Any Han character means the whole chunk is read by the Chinese voice.
+ *
+ * The English voice cannot pronounce Chinese at all — espeak's en-us dictionary
+ * has no entries for Han characters, so they are simply dropped. The Chinese
+ * voice handles English (espeak phonemizes the Latin runs, see the sidecar), so
+ * one Han character is enough to hand the chunk to it.
+ */
+export function hasHan(text: string): boolean {
+	return /[\u3400-\u4dbf\u4e00-\u9fff]/.test(text);
 }
 
 const DEFAULT_VOICE = env("PI_SPEAK_VOICE") ?? SAVED.voice ?? "am_michael";
@@ -923,7 +928,7 @@ export default function (pi: ExtensionAPI) {
 		// Kokoro speed is a multiplier around a ~200 wpm base voice.
 		const base = rate / 200;
 		const clamp = (value: number) => Math.max(0.6, Math.min(1.6, value));
-		if (AUTO_LANG && isChinese(text)) return { voice: ZH_VOICE, lang: "cmn", speed: clamp(base * SPEED_ZH) };
+		if (AUTO_LANG && hasHan(text)) return { voice: ZH_VOICE, lang: "cmn", speed: clamp(base * SPEED_ZH) };
 		return { voice, lang: SPEAK_LANG, speed: clamp(base * SPEED_EN) };
 	};
 

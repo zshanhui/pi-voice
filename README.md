@@ -94,6 +94,7 @@ Everything is environment variables; every one is documented in the header of th
 | `PI_VOICE_EARBUD` | on | `0` disables the headset watcher |
 | `PI_VOICE_BACKEND` | `auto` | `whisper-cli`, `parakeet`, `mlx`, or `api` (needs `PI_VOICE_API_KEY`) |
 | `PI_SPEAK_VOICE` | `am_michael` | TTS voice, e.g. `af_heart`, `bm_george` |
+| `PI_SPEAK_VOICE_ZH` | `zf_xiaoxiao` | voice for any chunk containing Chinese — the English voice cannot pronounce Chinese at all, while the Chinese voice reads English with an accent |
 | `PI_SPEAK_RATE` | `200` | words per minute |
 | `PI_SPEAK_ONLY_VOICE` | on | `0` speaks every reply, even answers to typed prompts |
 | `PI_SPEAK` | on | `0` starts with read-aloud disabled |
